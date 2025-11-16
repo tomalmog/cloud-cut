@@ -1,0 +1,92 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String       @id @default(cuid())
+  email         String       @unique
+  passwordHash  String
+  createdAt     DateTime     @default(now())
+  awsAccounts   AwsAccount[]
+  scans         Scan[]
+}
+
+model AwsAccount {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  accountId       String    // AWS account ID
+  roleArn         String    // IAM role ARN for assuming role
+  accountName     String    // User-provided friendly name
+  region          String    @default("us-east-1")
+  connectedAt     DateTime  @default(now())
+  lastScannedAt   DateTime?
+  scans           Scan[]
+
+  @@index([userId])
+}
+
+model Scan {
+  id                    String      @id @default(cuid())
+  userId                String
+  user                  User        @relation(fields: [userId], references: [id])
+  awsAccountId          String
+  awsAccount            AwsAccount  @relation(fields: [awsAccountId], references: [id])
+  createdAt             DateTime    @default(now())
+  status                String      // "running", "completed", "failed"
+
+  // Results summary
+  totalMonthlyCost      Float?
+  potentialSavings      Float?
+  savingsPercentage     Float?
+
+  // Counts of issues found
+  idleInstancesCount    Int         @default(0)
+  idleDatabasesCount    Int         @default(0)
+  unusedVolumesCount    Int         @default(0)
+  unusedIpsCount        Int         @default(0)
+
+  findings              Finding[]
+
+  @@index([userId])
+  @@index([awsAccountId])
+}
+
+model Finding {
+  id                String    @id @default(cuid())
+  scanId            String
+  scan              Scan      @relation(fields: [scanId], references: [id])
+
+  resourceType      String    // "ec2", "rds", "ebs", "eip", "elb"
+  resourceId        String    // Instance ID, volume ID, etc.
+  resourceName      String?   // Tag name if available
+  region            String
+
+  issueType         String    // "idle_instance", "idle_database", "unused_volume", "unused_ip", "oversized_instance"
+  severity          String    // "high", "medium", "low"
+
+  currentCost       Float     // Monthly cost
+  potentialSaving   Float     // How much could be saved
+
+  description       String    // Human-readable description
+  recommendation    String    // What to do about it
+
+  // Resource details (JSON)
+  resourceDetails   Json      // Full AWS resource object
+  metrics           Json?     // CloudWatch metrics data
+
+  // Generated fix
+  terraformCode     String?   // Generated Terraform to fix
+
+  createdAt         DateTime  @default(now())
+
+  @@index([scanId])
+}
